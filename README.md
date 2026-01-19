@@ -26,6 +26,13 @@ echo "Hello, world!" | ./speedread
 | `-wpm` | Words per minute (10-1000) | 200 |
 | `-punct-pause`, `-p` | Extra pause after punctuation in milliseconds | 0 |
 
+## Controls
+
+| Key | Action |
+|-----|--------|
+| `Space` | Pause/unpause |
+| `Ctrl+C` | Exit |
+
 ## Examples
 
 ```bash

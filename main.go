@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/term"
@@ -554,19 +555,67 @@ func main() {
 	// Calculate delay between words
 	delay := time.Duration(float64(time.Minute) / float64(*wpm))
 
+	// Open /dev/tty for keyboard input (works even when stdin is piped)
+	tty, err := os.Open("/dev/tty")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening tty: %v\n", err)
+		os.Exit(1)
+	}
+	defer tty.Close()
+
+	// Set up terminal raw mode for keyboard input
+	oldState, err := term.MakeRaw(int(tty.Fd()))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error setting raw mode: %v\n", err)
+		os.Exit(1)
+	}
+	defer term.Restore(int(tty.Fd()), oldState)
+
+	// Pause state
+	var paused atomic.Bool
+
+	// Goroutine to handle keyboard input
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			tty.Read(buf)
+			if buf[0] == ' ' {
+				paused.Store(!paused.Load())
+			} else if buf[0] == 3 { // Ctrl+C
+				term.Restore(int(tty.Fd()), oldState)
+				clearScreen()
+				fmt.Print("Interrupted.\r\n")
+				os.Exit(0)
+			}
+		}
+	}()
+
 	// Display each word
 	for i, word := range words {
+		// Wait while paused
+		for paused.Load() {
+			termWidth, termHeight := getTerminalSize()
+			clearScreen()
+			lines := renderWord(word, termWidth, termHeight)
+			for _, line := range lines {
+				fmt.Print(line + "\r\n")
+			}
+			progress := fmt.Sprintf("\r\n[%d/%d] %d WPM - PAUSED (space to resume)", i+1, len(words), *wpm)
+			fmt.Print(progress)
+			time.Sleep(100 * time.Millisecond)
+		}
+
 		termWidth, termHeight := getTerminalSize()
 		clearScreen()
 
 		// Render and display the word
 		lines := renderWord(word, termWidth, termHeight)
 		for _, line := range lines {
-			fmt.Println(line)
+			fmt.Print(line + "\r\n")
 		}
 
 		// Show progress at bottom
-		progress := fmt.Sprintf("\n[%d/%d] %d WPM - Press Ctrl+C to exit", i+1, len(words), *wpm)
+		progress := fmt.Sprintf("\r\n[%d/%d] %d WPM - Space to pause, Ctrl+C to exit", i+1, len(words), *wpm)
 		fmt.Print(progress)
 
 		time.Sleep(delay)
@@ -579,5 +628,5 @@ func main() {
 
 	// Final clear and message
 	clearScreen()
-	fmt.Println("Done! Read", len(words), "words.")
+	fmt.Print("Done! Read ", len(words), " words.\r\n")
 }
