@@ -632,6 +632,10 @@ func main() {
 		*wpm = 1000
 	}
 
+	// Atomic WPM for thread-safe adjustment during reading
+	var currentWPM atomic.Int32
+	currentWPM.Store(int32(*wpm))
+
 	// Get filename from remaining args
 	var filename string
 	args := flag.Args()
@@ -652,9 +656,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error: no words found in input")
 		os.Exit(1)
 	}
-
-	// Calculate delay between words
-	delay := time.Duration(float64(time.Minute) / float64(*wpm))
 
 	// Open /dev/tty for keyboard input (works even when stdin is piped)
 	tty, err := os.Open("/dev/tty")
@@ -677,9 +678,33 @@ func main() {
 
 	// Goroutine to handle keyboard input
 	go func() {
-		buf := make([]byte, 1)
+		buf := make([]byte, 3)
 		for {
-			tty.Read(buf)
+			n, _ := tty.Read(buf)
+			if n == 0 {
+				continue
+			}
+
+			// Check for escape sequence (arrow keys)
+			if n >= 3 && buf[0] == 27 && buf[1] == '[' {
+				switch buf[2] {
+				case 'A': // Up arrow - increase WPM
+					newWPM := currentWPM.Load() + 25
+					if newWPM > 1000 {
+						newWPM = 1000
+					}
+					currentWPM.Store(newWPM)
+				case 'B': // Down arrow - decrease WPM
+					newWPM := currentWPM.Load() - 25
+					if newWPM < 10 {
+						newWPM = 10
+					}
+					currentWPM.Store(newWPM)
+				}
+				continue
+			}
+
+			// Single character commands
 			if buf[0] == ' ' {
 				paused.Store(!paused.Load())
 			} else if buf[0] == 3 { // Ctrl+C
@@ -701,7 +726,7 @@ func main() {
 			for _, line := range lines {
 				fmt.Print(line + "\r\n")
 			}
-			progress := fmt.Sprintf("\r\n[%d/%d] %d WPM - PAUSED (space to resume)", i+1, len(words), *wpm)
+			progress := fmt.Sprintf("\r\n[%d/%d] %d WPM - PAUSED (space to resume, ↑↓ adjust speed)", i+1, len(words), currentWPM.Load())
 			fmt.Print(progress)
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -716,9 +741,12 @@ func main() {
 		}
 
 		// Show progress at bottom
-		progress := fmt.Sprintf("\r\n[%d/%d] %d WPM - Space to pause, Ctrl+C to exit", i+1, len(words), *wpm)
+		wpmNow := currentWPM.Load()
+		progress := fmt.Sprintf("\r\n[%d/%d] %d WPM - Space to pause, ↑↓ speed, Ctrl+C exit", i+1, len(words), wpmNow)
 		fmt.Print(progress)
 
+		// Calculate delay based on current WPM
+		delay := time.Duration(float64(time.Minute) / float64(wpmNow))
 		time.Sleep(delay)
 
 		// Add extra pause after punctuation
