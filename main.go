@@ -432,11 +432,18 @@ func renderWord(word string, termWidth, termHeight int, focal bool) []string {
 		padding = 0
 	}
 
-	// Apply horizontal padding and ORP coloring
+	// Apply horizontal padding, truncate to fit, and ORP coloring
 	for i, line := range lines {
 		if padding > 0 {
 			lines[i] = strings.Repeat(" ", padding) + line
 		}
+
+		// Truncate to terminal width to prevent wrapping
+		lineRunes := []rune(lines[i])
+		if len(lineRunes) > termWidth {
+			lines[i] = string(lineRunes[:termWidth])
+		}
+
 		if focal && wordLen > 0 {
 			// Calculate ORP column range (after padding)
 			orpStartCol := padding + orpIndex*scaledCharWidth
