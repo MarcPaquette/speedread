@@ -329,11 +329,16 @@ const fontHeight = 5
 const charWidth = 9            // All characters are exactly 9 columns wide
 const targetHeightPercent = 0.5 // Use 50% of terminal height for text
 
-func renderWord(word string, termWidth, termHeight int) []string {
+func renderWord(word string, termWidth, termHeight int, focal bool) []string {
 	word = strings.ToUpper(word)
+	wordRunes := []rune(word)
+	wordLen := len(wordRunes)
+
+	// Calculate ORP index for focal point highlighting
+	orpIndex := calculateORP(wordLen)
 
 	// Calculate total width of the word (all chars are same width)
-	totalWidth := len([]rune(word)) * charWidth
+	totalWidth := wordLen * charWidth
 
 	// Calculate scale factor to fit terminal
 	maxTextWidth := termWidth - 4 // Leave some margin
@@ -368,6 +373,12 @@ func renderWord(word string, termWidth, termHeight int) []string {
 		scale = 1.0
 	}
 
+	// Calculate integer scale factor
+	scaleFactor := int(scale + 0.5)
+	if scaleFactor < 1 {
+		scaleFactor = 1
+	}
+
 	// Build the output lines
 	lines := make([]string, fontHeight)
 	for row := 0; row < fontHeight; row++ {
@@ -396,19 +407,39 @@ func renderWord(word string, termWidth, termHeight int) []string {
 
 	// Scale up if scale > 1 (use rounding for better accuracy)
 	if scale > 1.0 {
-		scaleFactor := int(scale + 0.5)
-		if scaleFactor < 1 {
-			scaleFactor = 1
-		}
 		lines = scaleUp(lines, scaleFactor)
 	}
 
-	// Center horizontally
+	// Calculate scaled character width
+	scaledCharWidth := charWidth * scaleFactor
+
+	// Calculate horizontal positioning
+	lineWidth := len([]rune(lines[0]))
+	var padding int
+	if focal {
+		// ORP-based centering: position ORP character center at screen center
+		orpCenterCol := orpIndex*scaledCharWidth + (scaledCharWidth / 2)
+		padding = (termWidth / 2) - orpCenterCol
+	} else {
+		// Traditional centering
+		padding = (termWidth - lineWidth) / 2
+	}
+
+	// Ensure padding is non-negative
+	if padding < 0 {
+		padding = 0
+	}
+
+	// Apply horizontal padding and ORP coloring
 	for i, line := range lines {
-		lineWidth := len([]rune(line))
-		if lineWidth < termWidth {
-			padding := (termWidth - lineWidth) / 2
+		if padding > 0 {
 			lines[i] = strings.Repeat(" ", padding) + line
+		}
+		if focal && wordLen > 0 {
+			// Calculate ORP column range (after padding)
+			orpStartCol := padding + orpIndex*scaledCharWidth
+			orpEndCol := orpStartCol + scaledCharWidth
+			lines[i] = colorizeORPColumn(lines[i], orpStartCol, orpEndCol)
 		}
 	}
 
@@ -449,6 +480,45 @@ func scaleUp(lines []string, factor int) []string {
 		}
 	}
 	return result
+}
+
+// calculateORP returns the Optimal Recognition Point index for a word.
+// Based on Spritz algorithm: position depends on word length.
+func calculateORP(wordLen int) int {
+	switch {
+	case wordLen <= 1:
+		return 0
+	case wordLen <= 5:
+		return 1
+	case wordLen <= 9:
+		return 2
+	case wordLen <= 13:
+		return 3
+	default:
+		return 4
+	}
+}
+
+// colorizeORPColumn applies ANSI red color to a specific column range in a line.
+// startCol and endCol are 0-indexed rune positions.
+func colorizeORPColumn(line string, startCol, endCol int) string {
+	runes := []rune(line)
+	if startCol < 0 || startCol >= len(runes) {
+		return line
+	}
+	if endCol > len(runes) {
+		endCol = len(runes)
+	}
+
+	var result strings.Builder
+	result.WriteString(string(runes[:startCol]))
+	result.WriteString("\033[31m") // Red
+	result.WriteString(string(runes[startCol:endCol]))
+	result.WriteString("\033[0m") // Reset
+	if endCol < len(runes) {
+		result.WriteString(string(runes[endCol:]))
+	}
+	return result.String()
 }
 
 func clearScreen() {
@@ -521,6 +591,7 @@ func main() {
 	wpm := flag.Int("wpm", 200, "Words per minute (10-1000)")
 	punctPause := flag.Int("punct-pause", 0, "Extra pause after punctuation in milliseconds")
 	flag.IntVar(punctPause, "p", 0, "Extra pause after punctuation in milliseconds (shorthand)")
+	focal := flag.Bool("focal", true, "Enable focal point highlighting (Spritz-style)")
 	flag.Parse()
 
 	// Validate WPM
@@ -596,7 +667,7 @@ func main() {
 		for paused.Load() {
 			termWidth, termHeight := getTerminalSize()
 			clearScreen()
-			lines := renderWord(word, termWidth, termHeight)
+			lines := renderWord(word, termWidth, termHeight, *focal)
 			for _, line := range lines {
 				fmt.Print(line + "\r\n")
 			}
@@ -609,7 +680,7 @@ func main() {
 		clearScreen()
 
 		// Render and display the word
-		lines := renderWord(word, termWidth, termHeight)
+		lines := renderWord(word, termWidth, termHeight, *focal)
 		for _, line := range lines {
 			fmt.Print(line + "\r\n")
 		}
