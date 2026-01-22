@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	readability "github.com/go-shiori/go-readability"
 	"golang.org/x/term"
 )
 
@@ -525,11 +527,39 @@ func clearScreen() {
 	fmt.Print("\033[2J\033[H")
 }
 
-func readInput(filename string) (string, error) {
+func isURL(input string) bool {
+	return strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://")
+}
+
+func fetchURL(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP error: %s", resp.Status)
+	}
+
+	article, err := readability.FromReader(resp.Body, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract content: %w", err)
+	}
+
+	return article.TextContent, nil
+}
+
+func readInput(input string) (string, error) {
+	// Check if input is a URL
+	if isURL(input) {
+		return fetchURL(input)
+	}
+
 	var reader io.Reader
 
-	if filename != "" {
-		file, err := os.Open(filename)
+	if input != "" {
+		file, err := os.Open(input)
 		if err != nil {
 			return "", fmt.Errorf("failed to open file: %w", err)
 		}
@@ -539,7 +569,7 @@ func readInput(filename string) (string, error) {
 		// Check if stdin has data
 		stat, _ := os.Stdin.Stat()
 		if (stat.Mode() & os.ModeCharDevice) != 0 {
-			return "", fmt.Errorf("no input: provide a filename or pipe text to stdin")
+			return "", fmt.Errorf("no input: provide a filename, URL, or pipe text to stdin")
 		}
 		reader = os.Stdin
 	}
