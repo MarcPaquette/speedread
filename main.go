@@ -617,6 +617,27 @@ func endsWithPunctuation(word string) bool {
 	return false
 }
 
+func renderProgressBar(width, current, total int) string {
+	// Reserve space for brackets and percentage: [████░░░░] 100%
+	percentStr := fmt.Sprintf(" %d%%", current*100/total)
+	barWidth := width - 2 - len(percentStr) // 2 for brackets
+	if barWidth < 10 {
+		barWidth = 10
+	}
+
+	filled := barWidth * current / total
+	empty := barWidth - filled
+
+	var bar strings.Builder
+	bar.WriteString("[")
+	bar.WriteString(strings.Repeat("█", filled))
+	bar.WriteString(strings.Repeat("░", empty))
+	bar.WriteString("]")
+	bar.WriteString(percentStr)
+
+	return bar.String()
+}
+
 func main() {
 	wpm := flag.Int("wpm", 200, "Words per minute (10-1000)")
 	punctPause := flag.Int("punct-pause", 0, "Extra pause after punctuation in milliseconds")
@@ -726,7 +747,9 @@ func main() {
 			for _, line := range lines {
 				fmt.Print(line + "\r\n")
 			}
-			progress := fmt.Sprintf("\r\n[%d/%d] %d WPM - PAUSED (space to resume, ↑↓ adjust speed)", i+1, len(words), currentWPM.Load())
+			progressBar := renderProgressBar(termWidth, i+1, len(words))
+			fmt.Print("\r\n" + progressBar)
+			progress := fmt.Sprintf("\r\n%d WPM - PAUSED (space to resume, ↑↓ adjust speed)", currentWPM.Load())
 			fmt.Print(progress)
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -742,7 +765,9 @@ func main() {
 
 		// Show progress at bottom
 		wpmNow := currentWPM.Load()
-		progress := fmt.Sprintf("\r\n[%d/%d] %d WPM - Space to pause, ↑↓ speed, Ctrl+C exit", i+1, len(words), wpmNow)
+		progressBar := renderProgressBar(termWidth, i+1, len(words))
+		fmt.Print("\r\n" + progressBar)
+		progress := fmt.Sprintf("\r\n%d WPM - Space to pause, ↑↓ speed, Ctrl+C exit", wpmNow)
 		fmt.Print(progress)
 
 		// Calculate delay based on current WPM
