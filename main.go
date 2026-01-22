@@ -770,6 +770,14 @@ func main() {
 			// Single character commands
 			if buf[0] == ' ' {
 				paused.Store(!paused.Load())
+			} else if buf[0] >= '0' && buf[0] <= '9' {
+				// Number keys: jump to percentage (0=0%, 1=10%, ..., 9=90%)
+				percent := int32(buf[0]-'0') * 10
+				newIdx := totalWords * percent / 100
+				if newIdx >= totalWords {
+					newIdx = totalWords - 1
+				}
+				currentIndex.Store(newIdx)
 			} else if buf[0] == 3 { // Ctrl+C
 				term.Restore(int(tty.Fd()), oldState)
 				clearScreen()
@@ -801,7 +809,7 @@ func main() {
 			timeLeft := formatTimeRemaining(remaining, wpmNow)
 			progressBar := renderProgressBar(termWidth, i+1, len(words))
 			fmt.Print("\r\n" + progressBar)
-			progress := fmt.Sprintf("\r\n%d WPM | %s left - PAUSED (space, ↑↓ speed, ←→ nav)", wpmNow, timeLeft)
+			progress := fmt.Sprintf("\r\n%d WPM | %s left - PAUSED (space, ↑↓, ←→, 0-9)", wpmNow, timeLeft)
 			fmt.Print(progress)
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -825,7 +833,7 @@ func main() {
 		timeLeft := formatTimeRemaining(remaining, int(wpmNow))
 		progressBar := renderProgressBar(termWidth, i+1, len(words))
 		fmt.Print("\r\n" + progressBar)
-		progress := fmt.Sprintf("\r\n%d WPM | %s left - Space, ↑↓, ←→, Ctrl+C", wpmNow, timeLeft)
+		progress := fmt.Sprintf("\r\n%d WPM | %s left - Space, ↑↓, ←→, 0-9 jump", wpmNow, timeLeft)
 		fmt.Print(progress)
 
 		// Calculate delay based on current WPM
