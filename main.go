@@ -617,6 +617,25 @@ func endsWithPunctuation(word string) bool {
 	return false
 }
 
+func formatTimeRemaining(remainingWords, wpm int) string {
+	if wpm <= 0 {
+		return ""
+	}
+	// Calculate remaining seconds
+	seconds := remainingWords * 60 / wpm
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	minutes := seconds / 60
+	secs := seconds % 60
+	if minutes < 60 {
+		return fmt.Sprintf("%dm %ds", minutes, secs)
+	}
+	hours := minutes / 60
+	mins := minutes % 60
+	return fmt.Sprintf("%dh %dm", hours, mins)
+}
+
 func renderProgressBar(width, current, total int) string {
 	// Reserve space for brackets and percentage: [████░░░░] 100%
 	percentStr := fmt.Sprintf(" %d%%", current*100/total)
@@ -770,9 +789,12 @@ func main() {
 			for _, line := range lines {
 				fmt.Print(line + "\r\n")
 			}
+			wpmNow := int(currentWPM.Load())
+			remaining := len(words) - i - 1
+			timeLeft := formatTimeRemaining(remaining, wpmNow)
 			progressBar := renderProgressBar(termWidth, i+1, len(words))
 			fmt.Print("\r\n" + progressBar)
-			progress := fmt.Sprintf("\r\n%d WPM - PAUSED (space, ↑↓ speed, ←→ nav)", currentWPM.Load())
+			progress := fmt.Sprintf("\r\n%d WPM | %s left - PAUSED (space, ↑↓ speed, ←→ nav)", wpmNow, timeLeft)
 			fmt.Print(progress)
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -792,9 +814,11 @@ func main() {
 
 		// Show progress at bottom
 		wpmNow := currentWPM.Load()
+		remaining := len(words) - i - 1
+		timeLeft := formatTimeRemaining(remaining, int(wpmNow))
 		progressBar := renderProgressBar(termWidth, i+1, len(words))
 		fmt.Print("\r\n" + progressBar)
-		progress := fmt.Sprintf("\r\n%d WPM - Space, ↑↓ speed, ←→ nav, Ctrl+C exit", wpmNow)
+		progress := fmt.Sprintf("\r\n%d WPM | %s left - Space, ↑↓, ←→, Ctrl+C", wpmNow, timeLeft)
 		fmt.Print(progress)
 
 		// Calculate delay based on current WPM
