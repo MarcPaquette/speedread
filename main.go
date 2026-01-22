@@ -836,8 +836,15 @@ func main() {
 		progress := fmt.Sprintf("\r\n%d WPM | %s left - Space, ↑↓, ←→, 0-9 jump", wpmNow, timeLeft)
 		fmt.Print(progress)
 
-		// Calculate delay based on current WPM
-		delay := time.Duration(float64(time.Minute) / float64(wpmNow))
+		// Calculate delay based on current WPM with variable timing for word length
+		baseDelay := float64(time.Minute) / float64(wpmNow)
+		// Add 8% extra time per character above average length (5 chars)
+		wordLen := len([]rune(word))
+		if wordLen > 5 {
+			extraChars := wordLen - 5
+			baseDelay *= 1.0 + (float64(extraChars) * 0.08)
+		}
+		delay := time.Duration(baseDelay)
 		time.Sleep(delay)
 
 		// Add extra pause after punctuation
