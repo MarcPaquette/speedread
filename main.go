@@ -697,6 +697,10 @@ func main() {
 	// Pause state
 	var paused atomic.Bool
 
+	// Current word index for navigation
+	var currentIndex atomic.Int32
+	totalWords := int32(len(words))
+
 	// Goroutine to handle keyboard input
 	go func() {
 		buf := make([]byte, 3)
@@ -721,6 +725,18 @@ func main() {
 						newWPM = 10
 					}
 					currentWPM.Store(newWPM)
+				case 'D': // Left arrow - rewind
+					newIdx := currentIndex.Load() - 1
+					if newIdx < 0 {
+						newIdx = 0
+					}
+					currentIndex.Store(newIdx)
+				case 'C': // Right arrow - skip forward
+					newIdx := currentIndex.Load() + 1
+					if newIdx >= totalWords {
+						newIdx = totalWords - 1
+					}
+					currentIndex.Store(newIdx)
 				}
 				continue
 			}
@@ -738,9 +754,16 @@ func main() {
 	}()
 
 	// Display each word
-	for i, word := range words {
+	for currentIndex.Load() < totalWords {
+		i := int(currentIndex.Load())
+		word := words[i]
+
 		// Wait while paused
 		for paused.Load() {
+			// Re-read index in case user navigated while paused
+			i = int(currentIndex.Load())
+			word = words[i]
+
 			termWidth, termHeight := getTerminalSize()
 			clearScreen()
 			lines := renderWord(word, termWidth, termHeight, *focal)
@@ -749,10 +772,14 @@ func main() {
 			}
 			progressBar := renderProgressBar(termWidth, i+1, len(words))
 			fmt.Print("\r\n" + progressBar)
-			progress := fmt.Sprintf("\r\n%d WPM - PAUSED (space to resume, ↑↓ adjust speed)", currentWPM.Load())
+			progress := fmt.Sprintf("\r\n%d WPM - PAUSED (space, ↑↓ speed, ←→ nav)", currentWPM.Load())
 			fmt.Print(progress)
 			time.Sleep(100 * time.Millisecond)
 		}
+
+		// Re-read index in case user navigated
+		i = int(currentIndex.Load())
+		word = words[i]
 
 		termWidth, termHeight := getTerminalSize()
 		clearScreen()
@@ -767,7 +794,7 @@ func main() {
 		wpmNow := currentWPM.Load()
 		progressBar := renderProgressBar(termWidth, i+1, len(words))
 		fmt.Print("\r\n" + progressBar)
-		progress := fmt.Sprintf("\r\n%d WPM - Space to pause, ↑↓ speed, Ctrl+C exit", wpmNow)
+		progress := fmt.Sprintf("\r\n%d WPM - Space, ↑↓ speed, ←→ nav, Ctrl+C exit", wpmNow)
 		fmt.Print(progress)
 
 		// Calculate delay based on current WPM
@@ -778,6 +805,9 @@ func main() {
 		if *punctPause > 0 && endsWithPunctuation(word) {
 			time.Sleep(time.Duration(*punctPause) * time.Millisecond)
 		}
+
+		// Advance to next word (if not navigated away)
+		currentIndex.CompareAndSwap(int32(i), int32(i+1))
 	}
 
 	// Final clear and message
