@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -654,6 +656,76 @@ func endsWithSentence(word string) bool {
 	return false
 }
 
+// Bookmark functions for saving/resuming reading position
+func getBookmarkPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "speedread", "bookmarks.json")
+}
+
+func loadBookmarks() map[string]int {
+	bookmarks := make(map[string]int)
+	path := getBookmarkPath()
+	if path == "" {
+		return bookmarks
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return bookmarks
+	}
+
+	json.Unmarshal(data, &bookmarks)
+	return bookmarks
+}
+
+func saveBookmark(filename string, position int) {
+	path := getBookmarkPath()
+	if path == "" || filename == "" {
+		return
+	}
+
+	// Create directory if needed
+	dir := filepath.Dir(path)
+	os.MkdirAll(dir, 0755)
+
+	bookmarks := loadBookmarks()
+
+	// Use absolute path as key
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		absPath = filename
+	}
+
+	if position <= 0 {
+		delete(bookmarks, absPath) // Remove bookmark if at start
+	} else {
+		bookmarks[absPath] = position
+	}
+
+	data, err := json.Marshal(bookmarks)
+	if err != nil {
+		return
+	}
+	os.WriteFile(path, data, 0644)
+}
+
+func getBookmark(filename string) int {
+	if filename == "" {
+		return 0
+	}
+
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		absPath = filename
+	}
+
+	bookmarks := loadBookmarks()
+	return bookmarks[absPath]
+}
+
 func formatTimeRemaining(remainingWords, wpm int) string {
 	if wpm <= 0 {
 		return ""
@@ -740,6 +812,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Check for saved bookmark (only for file input)
+	startPosition := 0
+	if filename != "" && !isURL(filename) {
+		savedPos := getBookmark(filename)
+		if savedPos > 0 && savedPos < len(words) {
+			fmt.Printf("Found bookmark at word %d/%d (%.0f%%). Resume? [Y/n] ", savedPos+1, len(words), float64(savedPos)/float64(len(words))*100)
+			var response string
+			fmt.Scanln(&response)
+			if response == "" || strings.ToLower(response) == "y" {
+				startPosition = savedPos
+			}
+		}
+	}
+
 	// Open /dev/tty for keyboard input (works even when stdin is piped)
 	tty, err := os.Open("/dev/tty")
 	if err != nil {
@@ -761,6 +847,7 @@ func main() {
 
 	// Current word index for navigation
 	var currentIndex atomic.Int32
+	currentIndex.Store(int32(startPosition))
 	totalWords := int32(len(words))
 
 	// Session statistics tracking
@@ -820,9 +907,13 @@ func main() {
 				}
 				currentIndex.Store(newIdx)
 			} else if buf[0] == 3 { // Ctrl+C
+				// Save bookmark before exiting
+				if filename != "" && !isURL(filename) {
+					saveBookmark(filename, int(currentIndex.Load()))
+				}
 				term.Restore(int(tty.Fd()), oldState)
 				clearScreen()
-				fmt.Print("Interrupted.\r\n")
+				fmt.Print("Interrupted. Position saved.\r\n")
 				os.Exit(0)
 			}
 		}
@@ -949,6 +1040,11 @@ func main() {
 
 		// Advance to next word (if not navigated away)
 		currentIndex.CompareAndSwap(int32(i), int32(i+1))
+	}
+
+	// Clear bookmark since reading is complete
+	if filename != "" && !isURL(filename) {
+		saveBookmark(filename, 0) // 0 removes the bookmark
 	}
 
 	// Final clear and session statistics
