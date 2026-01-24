@@ -762,6 +762,11 @@ func main() {
 	var currentIndex atomic.Int32
 	totalWords := int32(len(words))
 
+	// Session statistics tracking
+	sessionStart := time.Now()
+	var totalPauseTime time.Duration
+	var pauseStart time.Time
+
 	// Goroutine to handle keyboard input
 	go func() {
 		buf := make([]byte, 3)
@@ -828,6 +833,9 @@ func main() {
 		word := words[i]
 
 		// Wait while paused
+		if paused.Load() {
+			pauseStart = time.Now()
+		}
 		for paused.Load() {
 			// Re-read index in case user navigated while paused
 			i = int(currentIndex.Load())
@@ -847,6 +855,10 @@ func main() {
 			progress := fmt.Sprintf("\r\n%d WPM | %s left - PAUSED (space, ↑↓, ←→, 0-9)", wpmNow, timeLeft)
 			fmt.Print(progress)
 			time.Sleep(100 * time.Millisecond)
+		}
+		if !pauseStart.IsZero() {
+			totalPauseTime += time.Since(pauseStart)
+			pauseStart = time.Time{}
 		}
 
 		// Re-read index in case user navigated
@@ -896,7 +908,21 @@ func main() {
 		currentIndex.CompareAndSwap(int32(i), int32(i+1))
 	}
 
-	// Final clear and message
+	// Final clear and session statistics
 	clearScreen()
-	fmt.Print("Done! Read ", len(words), " words.\r\n")
+	sessionDuration := time.Since(sessionStart)
+	activeTime := sessionDuration - totalPauseTime
+	wordsRead := len(words)
+	actualWPM := 0
+	if activeTime.Minutes() > 0 {
+		actualWPM = int(float64(wordsRead) / activeTime.Minutes())
+	}
+
+	fmt.Print("Session Complete!\r\n")
+	fmt.Print("─────────────────\r\n")
+	fmt.Printf("Words read:    %d\r\n", wordsRead)
+	fmt.Printf("Total time:    %s\r\n", sessionDuration.Round(time.Second))
+	fmt.Printf("Time paused:   %s\r\n", totalPauseTime.Round(time.Second))
+	fmt.Printf("Active time:   %s\r\n", activeTime.Round(time.Second))
+	fmt.Printf("Actual WPM:    %d\r\n", actualWPM)
 }
