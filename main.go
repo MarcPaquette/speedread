@@ -701,6 +701,7 @@ func main() {
 	focal := flag.Bool("focal", true, "Enable focal point highlighting (Spritz-style)")
 	focalColor := flag.String("focal-color", "red", "Focal point color (black, red, green, yellow, blue, magenta, cyan, white)")
 	flag.StringVar(focalColor, "c", "red", "Focal point color (shorthand)")
+	showContext := flag.Bool("context", false, "Show surrounding words (prev/next) for context")
 	flag.Parse()
 
 	// Validate WPM
@@ -843,10 +844,32 @@ func main() {
 
 			termWidth, termHeight := getTerminalSize()
 			clearScreen()
+
+			// Show context: previous word (dimmed)
+			if *showContext && i > 0 {
+				prevWord := words[i-1]
+				padding := (termWidth - len(prevWord)) / 2
+				if padding < 0 {
+					padding = 0
+				}
+				fmt.Printf("%s\033[2m%s\033[0m\r\n", strings.Repeat(" ", padding), prevWord)
+			}
+
 			lines := renderWord(word, termWidth, termHeight, *focal, focalColorCode)
 			for _, line := range lines {
 				fmt.Print(line + "\r\n")
 			}
+
+			// Show context: next word (dimmed)
+			if *showContext && i < len(words)-1 {
+				nextWord := words[i+1]
+				padding := (termWidth - len(nextWord)) / 2
+				if padding < 0 {
+					padding = 0
+				}
+				fmt.Printf("%s\033[2m%s\033[0m\r\n", strings.Repeat(" ", padding), nextWord)
+			}
+
 			wpmNow := int(currentWPM.Load())
 			remaining := len(words) - i - 1
 			timeLeft := formatTimeRemaining(remaining, wpmNow)
@@ -868,10 +891,30 @@ func main() {
 		termWidth, termHeight := getTerminalSize()
 		clearScreen()
 
+		// Show context: previous word (dimmed)
+		if *showContext && i > 0 {
+			prevWord := words[i-1]
+			padding := (termWidth - len(prevWord)) / 2
+			if padding < 0 {
+				padding = 0
+			}
+			fmt.Printf("%s\033[2m%s\033[0m\r\n", strings.Repeat(" ", padding), prevWord)
+		}
+
 		// Render and display the word
 		lines := renderWord(word, termWidth, termHeight, *focal, focalColorCode)
 		for _, line := range lines {
 			fmt.Print(line + "\r\n")
+		}
+
+		// Show context: next word (dimmed)
+		if *showContext && i < len(words)-1 {
+			nextWord := words[i+1]
+			padding := (termWidth - len(nextWord)) / 2
+			if padding < 0 {
+				padding = 0
+			}
+			fmt.Printf("%s\033[2m%s\033[0m\r\n", strings.Repeat(" ", padding), nextWord)
 		}
 
 		// Show progress at bottom
