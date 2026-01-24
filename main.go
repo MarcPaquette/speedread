@@ -624,6 +624,18 @@ func endsWithPunctuation(word string) bool {
 	return false
 }
 
+func endsWithSentence(word string) bool {
+	if len(word) == 0 {
+		return false
+	}
+	lastChar := rune(word[len(word)-1])
+	switch lastChar {
+	case '.', '!', '?':
+		return true
+	}
+	return false
+}
+
 func formatTimeRemaining(remainingWords, wpm int) string {
 	if wpm <= 0 {
 		return ""
@@ -847,8 +859,13 @@ func main() {
 		delay := time.Duration(baseDelay)
 		time.Sleep(delay)
 
-		// Add extra pause after punctuation
-		if *punctPause > 0 && endsWithPunctuation(word) {
+		// Add automatic pause at sentence boundaries (. ! ?)
+		if endsWithSentence(word) {
+			time.Sleep(150 * time.Millisecond)
+		}
+
+		// Add extra pause after other punctuation (user-configured)
+		if *punctPause > 0 && endsWithPunctuation(word) && !endsWithSentence(word) {
 			time.Sleep(time.Duration(*punctPause) * time.Millisecond)
 		}
 
