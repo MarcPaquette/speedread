@@ -331,7 +331,7 @@ const fontHeight = 5
 const charWidth = 9            // All characters are exactly 9 columns wide
 const targetHeightPercent = 0.5 // Use 50% of terminal height for text
 
-func renderWord(word string, termWidth, termHeight int, focal bool) []string {
+func renderWord(word string, termWidth, termHeight int, focal bool, focalColorCode string) []string {
 	word = strings.ToUpper(word)
 	wordRunes := []rune(word)
 	wordLen := len(wordRunes)
@@ -448,7 +448,7 @@ func renderWord(word string, termWidth, termHeight int, focal bool) []string {
 			// Calculate ORP column range (after padding)
 			orpStartCol := padding + orpIndex*scaledCharWidth
 			orpEndCol := orpStartCol + scaledCharWidth
-			lines[i] = colorizeORPColumn(lines[i], orpStartCol, orpEndCol)
+			lines[i] = colorizeORPColumn(lines[i], orpStartCol, orpEndCol, focalColorCode)
 		}
 	}
 
@@ -508,9 +508,27 @@ func calculateORP(wordLen int) int {
 	}
 }
 
-// colorizeORPColumn applies ANSI red color to a specific column range in a line.
+// colorToANSI converts a color name to its ANSI escape code
+func colorToANSI(color string) string {
+	colors := map[string]string{
+		"black":   "\033[30m",
+		"red":     "\033[31m",
+		"green":   "\033[32m",
+		"yellow":  "\033[33m",
+		"blue":    "\033[34m",
+		"magenta": "\033[35m",
+		"cyan":    "\033[36m",
+		"white":   "\033[37m",
+	}
+	if code, ok := colors[strings.ToLower(color)]; ok {
+		return code
+	}
+	return "\033[31m" // Default to red
+}
+
+// colorizeORPColumn applies ANSI color to a specific column range in a line.
 // startCol and endCol are 0-indexed rune positions.
-func colorizeORPColumn(line string, startCol, endCol int) string {
+func colorizeORPColumn(line string, startCol, endCol int, colorCode string) string {
 	runes := []rune(line)
 	if startCol < 0 || startCol >= len(runes) {
 		return line
@@ -521,7 +539,7 @@ func colorizeORPColumn(line string, startCol, endCol int) string {
 
 	var result strings.Builder
 	result.WriteString(string(runes[:startCol]))
-	result.WriteString("\033[31m") // Red
+	result.WriteString(colorCode)
 	result.WriteString(string(runes[startCol:endCol]))
 	result.WriteString("\033[0m") // Reset
 	if endCol < len(runes) {
@@ -681,6 +699,8 @@ func main() {
 	punctPause := flag.Int("punct-pause", 0, "Extra pause after punctuation in milliseconds")
 	flag.IntVar(punctPause, "p", 0, "Extra pause after punctuation in milliseconds (shorthand)")
 	focal := flag.Bool("focal", true, "Enable focal point highlighting (Spritz-style)")
+	focalColor := flag.String("focal-color", "red", "Focal point color (black, red, green, yellow, blue, magenta, cyan, white)")
+	flag.StringVar(focalColor, "c", "red", "Focal point color (shorthand)")
 	flag.Parse()
 
 	// Validate WPM
@@ -690,6 +710,9 @@ func main() {
 	if *wpm > 1000 {
 		*wpm = 1000
 	}
+
+	// Convert focal color to ANSI code
+	focalColorCode := colorToANSI(*focalColor)
 
 	// Atomic WPM for thread-safe adjustment during reading
 	var currentWPM atomic.Int32
@@ -812,7 +835,7 @@ func main() {
 
 			termWidth, termHeight := getTerminalSize()
 			clearScreen()
-			lines := renderWord(word, termWidth, termHeight, *focal)
+			lines := renderWord(word, termWidth, termHeight, *focal, focalColorCode)
 			for _, line := range lines {
 				fmt.Print(line + "\r\n")
 			}
@@ -834,7 +857,7 @@ func main() {
 		clearScreen()
 
 		// Render and display the word
-		lines := renderWord(word, termWidth, termHeight, *focal)
+		lines := renderWord(word, termWidth, termHeight, *focal, focalColorCode)
 		for _, line := range lines {
 			fmt.Print(line + "\r\n")
 		}
