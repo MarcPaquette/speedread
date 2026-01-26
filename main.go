@@ -333,7 +333,7 @@ const fontHeight = 5
 const charWidth = 9            // All characters are exactly 9 columns wide
 const targetHeightPercent = 0.5 // Use 50% of terminal height for text
 
-func renderWord(word string, termWidth, termHeight int, focal bool, focalColorCode string) []string {
+func renderWord(word string, termWidth, termHeight int, focal bool, focalColorCode string, maxWordLen int) []string {
 	word = strings.ToUpper(word)
 	wordRunes := []rune(word)
 	wordLen := len(wordRunes)
@@ -348,11 +348,10 @@ func renderWord(word string, termWidth, termHeight int, focal bool, focalColorCo
 	maxTextWidth := termWidth - 4 // Leave some margin
 	maxTextHeight := termHeight - 4
 
-	// Calculate base scale for uniform height across most words
-	// Use the smaller of: height-based scale OR width-based scale for typical word
+	// Calculate base scale for uniform height across all words
+	// Use the smaller of: height-based scale OR width-based scale for longest word
 	heightScale := float64(maxTextHeight) * targetHeightPercent / float64(fontHeight)
-	referenceWordLength := 8 // Typical word length for uniform scaling
-	referenceWidth := referenceWordLength * charWidth
+	referenceWidth := maxWordLen * charWidth
 	widthScale := float64(maxTextWidth) / float64(referenceWidth)
 
 	baseScale := heightScale
@@ -623,6 +622,21 @@ func tokenizeWords(text string) []string {
 	return words
 }
 
+func findMaxWordLen(words []string) int {
+	maxLen := 0
+	for _, word := range words {
+		wordLen := len([]rune(word))
+		if wordLen > maxLen {
+			maxLen = wordLen
+		}
+	}
+	// Ensure minimum of 1 to avoid division by zero
+	if maxLen < 1 {
+		maxLen = 1
+	}
+	return maxLen
+}
+
 func getTerminalSize() (width, height int) {
 	width, height, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
@@ -812,6 +826,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Find longest word for uniform font sizing
+	maxWordLen := findMaxWordLen(words)
+
 	// Check for saved bookmark (only for file input)
 	startPosition := 0
 	if filename != "" && !isURL(filename) {
@@ -946,7 +963,7 @@ func main() {
 				fmt.Printf("%s\033[2m%s\033[0m\r\n", strings.Repeat(" ", padding), prevWord)
 			}
 
-			lines := renderWord(word, termWidth, termHeight, *focal, focalColorCode)
+			lines := renderWord(word, termWidth, termHeight, *focal, focalColorCode, maxWordLen)
 			for _, line := range lines {
 				fmt.Print(line + "\r\n")
 			}
@@ -993,7 +1010,7 @@ func main() {
 		}
 
 		// Render and display the word
-		lines := renderWord(word, termWidth, termHeight, *focal, focalColorCode)
+		lines := renderWord(word, termWidth, termHeight, *focal, focalColorCode, maxWordLen)
 		for _, line := range lines {
 			fmt.Print(line + "\r\n")
 		}
